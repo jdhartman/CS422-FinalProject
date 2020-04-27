@@ -5,6 +5,7 @@ const SERVER_TYPE = {
     CLIENT_SERVER: "cs"
 }
 
+var servers = {};
 var cs_server, cs_div;
 var p2p_server, p2p_div;
 
@@ -19,6 +20,9 @@ function init() {
     p2p_div = createContainer(SERVER_TYPE.PEER_2_PEER)
     p2p_server = createServer(SERVER_TYPE.PEER_2_PEER, p2p_div[0], p2p_div[1]);
     console.log(p2p_server);
+
+    servers[SERVER_TYPE.CLIENT_SERVER] = cs_server;
+    servers[SERVER_TYPE.PEER_2_PEER] = p2p_server;
 }
 
 function createContainer(id) {

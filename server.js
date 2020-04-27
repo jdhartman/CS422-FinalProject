@@ -6,7 +6,6 @@ const MOVE = {
     DOWN: "down"
 }
 
-var clientUpdateRate = 2000;
 let hSpeed = .1
 let vSpeed = .1
 
@@ -18,9 +17,16 @@ class Server {
         this.type = type
         this.div = div
         this.list = list
-        this.updateRate = 1000
+        this.updateRate = 100
+        this.clientUpdateRate = 1000
+        this.isEventBased = true
+        this.hasClientPrediction = true
+        
         this.delta = 0
         this.lastFrameTimeMs = 0
+
+        this.sendDelta = 0
+        this.lastSendDelta = 0
 
         this.createTitle()
         this.createButtons()
@@ -101,7 +107,7 @@ class Server {
         buttonDiv.appendChild(this.createInputLabel(game, MOVE.DOWN));
 
         delayDiv.appendChild(this.createDelayInputLabel(game));
-        delayDiv.appendChild(this.createDelayInput());
+        delayDiv.appendChild(this.createDelayInput(game));
 
         item.appendChild(canvasDiv);
         item.appendChild(buttonDiv);
@@ -179,12 +185,15 @@ class Server {
         return label
     }
 
-    createDelayInput() {
+    createDelayInput(game) {
         var delay = document.createElement("input");
+        delay.id = "ping-" + game.id
         delay.setAttribute("type", "number");
         delay.style.width = "50px";
         delay.style.marginLeft = "15px";
         delay.value = 0;
+
+        delay.addEventListener("change", (val) => {game.setDelay(val)})
 
         return delay
     }
@@ -202,18 +211,93 @@ class Server {
 
         this.div.appendChild(canvas);
 
+        let updateLabel = document.createElement("label");
+        updateLabel.htmlFor = "update-" + this.type
+        updateLabel.innerHTML = "Server update rate in ms:";
+        updateLabel.style.display = "block";
+
+        this.div.appendChild(updateLabel)
+
+        let updateInput = document.createElement("input");
+        updateInput.id = "update-" + this.type
+        updateInput.setAttribute("type", "number");
+        updateInput.value = 100;
+
+        updateInput.style.display = "block";
+
+        updateInput.addEventListener("change", (val) => {this.updateRate = val.target.value})
+
+        this.div.appendChild(updateInput);
+
+        let clientRateLabel = document.createElement("label");
+        clientRateLabel.htmlFor = "clientUpdateRate-" + this.type
+        clientRateLabel.innerHTML = "Client update rate in ms:";
+
+        this.div.appendChild(clientRateLabel)
+
+        let clientRateInput = document.createElement("input");
+        clientRateInput.id = "update-" + this.type
+        clientRateInput.setAttribute("type", "number");
+        clientRateInput.disabled = true
+        clientRateInput.value = 1000;
+
+        clientRateInput.style.display = "block";
+
+        clientRateInput.addEventListener("change", (val) => {this.clientUpdateRate = val.target.value})
+
+        this.div.appendChild(clientRateInput);
+
+        let eventCheck = document.createElement("input");
+        eventCheck.id = "eventcheck-" + this.type
+        eventCheck.checked = true
+        eventCheck.setAttribute("type", "checkbox");
+
+        eventCheck.addEventListener("change", (val) => {
+            clientRateInput.disabled = val.target.checked
+            this.isEventBased = val.target.checked
+        });
+
+        this.div.appendChild(eventCheck)
+
+        let checkLabel = document.createElement("label");
+        checkLabel.htmlFor = "eventcheck-" + this.type
+        checkLabel.innerHTML = "Event Based";
+
+        this.div.appendChild(checkLabel)
+
+        let clientCheck = document.createElement("input");
+        clientCheck.id = "clientpredict-" + this.type
+        clientCheck.checked = true
+        clientCheck.setAttribute("type", "checkbox");
+
+        clientCheck.addEventListener("change", (val) => {
+            this.hasClientPrediction = val.target.checked
+        });
+
+        this.div.appendChild(clientCheck)
+
+        let clientLabel = document.createElement("label");
+        clientLabel.htmlFor = "clientpredict-" + this.type
+        clientLabel.innerHTML = "Client Prediction";
+
+        this.div.appendChild(clientLabel)
+
         return canvas
     }
 
     gameLoop(timestamp) {
         
         this.delta = timestamp - this.lastFrameTimeMs;
+        this.lastFrameTimeMs = timestamp;
+
+        this.sendDelta = timestamp - this.lastSendDelta;
 
         if(this.serverContext) {
-            if(this.delta > this.updateRate) {
-                this.lastFrameTimeMs = timestamp;
-                this.update();
+            if(this.sendDelta > this.updateRate) {
+                this.lastSendDelta = timestamp
+                this.sendUpdate();
             }
+            this.localUpdate(this.delta);
             this.draw();
         }
     
@@ -232,14 +316,56 @@ class Server {
         }
     }
 
-    update() {
-        console.log("server updated");
-        //for(const id in this.players) {
-            //this.players[id].setPosition(this.games[id].players[id].posx, this.games[id].players[id].posy)
-        //}
+    sendUpdate() {
+        for(const id in this.players) {
+            this.games[id].updatePlayers(this.players)
+        }
     }
 
-    updatePlayer(id, h, v, delta) {
-        this.players[id].setPosition(h * hSpeed * delta, v * vSpeed * delta)
+    localUpdate(delta) {
+       //console.log("server updated");
+        if(this.isEventBased) {
+            for(const id in this.players) {
+                let p = this.players[id]
+    
+                if(p.isLeft && p.isRight == false) {
+                    p.posx -= hSpeed * delta
+                    if(p.posx < -20) {
+                        p.posx = 220 - hSpeed * delta
+                    }
+                }
+                else if(p.isRight && p.isLeft == false) {
+                    p.posx += hSpeed * delta
+                    if(p.posx > 220) {
+                        p.posx = -20 + hSpeed * delta
+                    }
+                }
+    
+                if(p.isUp && p.isDown == false) {
+                    p.posy -= vSpeed * delta
+                    if(p.posy < -20) {
+                        p.posy = 220 - vSpeed * delta
+                    }
+                }
+                else if(p.isDown && p.isUp == false) {
+                    p.posy += vSpeed * delta
+                    if(p.posy > 220) {
+                        p.posy = -20 + vSpeed * delta
+                    }
+                }
+            }
+        }
+    }
+
+    updatePlayerPosition(id, player) {
+        this.players[id].setPosition(player.posx, player.posy)
+    }
+
+    updatePlayerInput(id, inputs, delta) {
+        console.log("update player input");
+        this.players[id].isLeft = inputs[0]
+        this.players[id].isRight = inputs[1]
+        this.players[id].isUp = inputs[2]
+        this.players[id].isDown = inputs[3]
     }
 }
